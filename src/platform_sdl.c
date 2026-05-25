@@ -1,4 +1,7 @@
 #include "SDL.h"
+#if defined(UWP_BUILD)
+#include "SDL_system.h"
+#endif
 
 #include "platform.h"
 #include "input.h"
@@ -14,7 +17,13 @@ static SDL_GameController *gamepad;
 static void (*audio_callback)(float *buffer, uint32_t len) = NULL;
 static char *path_assets = "";
 static char *path_userdata = "";
+static char path_uwp_localstate[1024];
 static char *temp_path = NULL;
+
+static void copy_path_with_slash(char *dst, size_t dst_size, const char *src) {
+	size_t len = strlen(src);
+	snprintf(dst, dst_size, "%s%s", src, (len > 0 && src[len - 1] != '\\' && src[len - 1] != '/') ? "\\" : "");
+}
 
 
 uint8_t platform_sdl_gamepad_map[] = {
@@ -230,11 +239,23 @@ void platform_set_audio_mix_cb(void (*cb)(float *buffer, uint32_t len)) {
 
 FILE *platform_open_asset(const char *name, const char *mode) {
 	char *path = strcat(strcpy(temp_path, path_assets), name);
-	return fopen(path, mode);
+	FILE *file = fopen(path, mode);
+#if defined(UWP_BUILD)
+	if (!file) {
+		path = strcat(strcpy(temp_path, path_userdata), name);
+		file = fopen(path, mode);
+	}
+#endif
+	return file;
 }
 
 uint8_t *platform_load_asset(const char *name, uint32_t *bytes_read) {
 	char *path = strcat(strcpy(temp_path, path_assets), name);
+#if defined(UWP_BUILD)
+	if (!file_exists(path)) {
+		path = strcat(strcpy(temp_path, path_userdata), name);
+	}
+#endif
 	return file_load(path, bytes_read);
 }
 
@@ -253,17 +274,24 @@ uint32_t platform_store_userdata(const char *name, void *bytes, int32_t len) {
 }
 
 #if defined(RENDERER_GL) // ----------------------------------------------------
-	#define PLATFORM_WINDOW_FLAGS SDL_WINDOW_OPENGL
+	#if defined(UWP_BUILD)
+		#define PLATFORM_WINDOW_FLAGS (SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN_DESKTOP)
+	#else
+		#define PLATFORM_WINDOW_FLAGS SDL_WINDOW_OPENGL
+	#endif
 	SDL_GLContext platform_gl;
 
 	void platform_video_init(void) {
 		#if defined(USE_GLES2)
 			SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
 			SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
-			SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+			SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
 		#endif
 
 		platform_gl = SDL_GL_CreateContext(window);
+		if (!platform_gl) {
+			die("SDL_GL_CreateContext failed: %s", SDL_GetError());
+		}
 		SDL_GL_SetSwapInterval(1);
 	}
 
@@ -344,8 +372,18 @@ uint32_t platform_store_userdata(const char *name, void *bytes, int32_t len) {
 	#error "Unsupported renderer for platform SDL"
 #endif
 
+#if defined(UWP_BUILD)
+int SDL_main(int argc, char *argv[]) {
+#else
 int main(int argc, char *argv[]) {
-	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER);
+#endif
+	#if defined(UWP_BUILD)
+		SDL_SetHint(SDL_HINT_WINRT_HANDLE_BACK_BUTTON, "1");
+	#endif
+
+	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) != 0) {
+		die("SDL_Init failed: %s", SDL_GetError());
+	}
 
 	// Figure out the absolute asset and userdata paths. These may either be
 	// supplied at build time through -DPATH_ASSETS=.. and -DPATH_USERDATA=..
@@ -366,15 +404,23 @@ int main(int argc, char *argv[]) {
 	#ifdef PATH_USERDATA
 		path_userdata = TOSTRING(PATH_USERDATA);
 	#else
-		sdl_path_userdata = SDL_GetPrefPath("phoboslab", "wipeout");
-		if (sdl_path_userdata) {
-			path_userdata = sdl_path_userdata;
-		}
+		#if defined(UWP_BUILD)
+			const char *uwp_localstate = SDL_WinRTGetFSPathUTF8(SDL_WINRT_PATH_LOCAL_FOLDER);
+			if (uwp_localstate) {
+				copy_path_with_slash(path_uwp_localstate, sizeof(path_uwp_localstate), uwp_localstate);
+				path_userdata = path_uwp_localstate;
+			}
+		#else
+			sdl_path_userdata = SDL_GetPrefPath("phoboslab", "wipeout");
+			if (sdl_path_userdata) {
+				path_userdata = sdl_path_userdata;
+			}
+		#endif
 	#endif
 
 	// Reserve some space for concatenating the asset and userdata paths with
 	// local filenames.
-	temp_path = mem_bump(max(strlen(path_assets), strlen(path_userdata)) + 64);
+	temp_path = mem_bump(max(strlen(path_assets), strlen(path_userdata)) + 1024);
 
 	// Load gamecontrollerdb.txt if present.
 	// FIXME: Should this load from userdata instead?
@@ -407,6 +453,9 @@ int main(int argc, char *argv[]) {
 		SYSTEM_WINDOW_WIDTH, SYSTEM_WINDOW_HEIGHT,
 		SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | PLATFORM_WINDOW_FLAGS | SDL_WINDOW_ALLOW_HIGHDPI
 	);
+	if (!window) {
+		die("SDL_CreateWindow failed: %s", SDL_GetError());
+	}
 
 	platform_video_init();
 	system_init();

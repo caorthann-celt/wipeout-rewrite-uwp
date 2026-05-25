@@ -1,4 +1,11 @@
 cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
+
+option(UWP_BUILD "Build wipEout as a UWP compatible DLL" OFF)
+if(UWP_BUILD)
+	set(CMAKE_SYSTEM_NAME WindowsStore)
+	set(CMAKE_SYSTEM_VERSION 10.0.19041.0 CACHE STRING "Target Windows SDK version for UWP builds" FORCE)
+endif()
+
 project(wipeout-rewrite)
 
 if("${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
@@ -38,14 +45,18 @@ cmake_dependent_option(MINIMAL_BUNDLE "Do not include music/movies for web build
 option(PATH_ASSETS "Path to where the game assets should be located.")
 option(PATH_USERDATA "Path to where user data (e.g. game saves) should be located.")
 option(DEV_BUILD "Set asset/userdata paths to the source directory for testing" OFF)
+set(WIPEOUT_UWP_SDL_ROOT "C:/Users/Caorthann/vcpkg/installed/x64-uwp" CACHE PATH "Root of the SDL2 UWP dependency install")
+set(WIPEOUT_UWP_ANGLE_ROOT "C:/Users/Caorthann/vcpkg/installed/x64-uwp" CACHE PATH "Root of the ANGLE UWP dependency install")
 if (DEV_BUILD)
 	set(PATH_ASSETS "${CMAKE_SOURCE_DIR}/")
 	set(PATH_USERDATA "${CMAKE_SOURCE_DIR}/")
 endif()
 
-find_package(OpenGL)
-find_package(GLEW)
-find_package(SDL2)
+if(NOT UWP_BUILD)
+	find_package(OpenGL)
+	find_package(GLEW)
+	find_package(SDL2)
+endif()
 
 set(common_src
 	src/wipeout/camera.c
@@ -103,11 +114,18 @@ set(common_src
 	src/utils.c
 	src/utils.h
 
-	packaging/windows/wipeout.exe.manifest
-	packaging/windows/wipeout.rc
 )
 
-add_executable(wipeout WIN32 ${common_src})
+if(UWP_BUILD)
+	add_library(wipeout SHARED ${common_src})
+	set_property(TARGET wipeout PROPERTY WINDOWS_EXPORT_ALL_SYMBOLS ON)
+else()
+	add_executable(wipeout WIN32
+		${common_src}
+		packaging/windows/wipeout.exe.manifest
+		packaging/windows/wipeout.rc
+	)
+endif()
 set_property(TARGET wipeout PROPERTY C_STANDARD 11)
 target_include_directories(wipeout PRIVATE src)
 target_include_directories(wipeout SYSTEM PRIVATE src/libs)
@@ -120,7 +138,24 @@ target_compile_definitions(wipeout PRIVATE
 	$<$<BOOL:${PATH_USERDATA}>:-DPATH_USERDATA=${PATH_USERDATA}>
 )
 
-if(WIN32)
+if(UWP_BUILD)
+	target_compile_definitions(wipeout PRIVATE
+		UWP_BUILD=1
+		__WINRT__=1
+		"NOMINMAX"
+		"_USE_MATH_DEFINES"
+		"_CRT_SECURE_NO_WARNINGS"
+	)
+	target_include_directories(wipeout PRIVATE
+		"${WIPEOUT_UWP_SDL_ROOT}/include"
+		"${WIPEOUT_UWP_SDL_ROOT}/include/SDL2"
+		"${WIPEOUT_UWP_ANGLE_ROOT}/include"
+	)
+	target_link_directories(wipeout PRIVATE
+		"${WIPEOUT_UWP_SDL_ROOT}/lib"
+		"${WIPEOUT_UWP_ANGLE_ROOT}/lib"
+	)
+elseif(WIN32)
 	target_compile_definitions(wipeout PRIVATE
 		"NOMINMAX"
 		"_USE_MATH_DEFINES"
@@ -195,23 +230,33 @@ if(using_gl)
 	target_compile_definitions(wipeout PRIVATE "RENDERER_GL")
 	target_sources(wipeout PRIVATE src/render_gl.c)
 
-	target_include_directories(wipeout PUBLIC ${OPENGL_INCLUDE_DIR})
 	if ("${RENDERER}" STREQUAL "GLES2")
 		target_compile_definitions(wipeout PRIVATE "USE_GLES2")
+	endif()
+
+	if(UWP_BUILD)
+		target_link_libraries(wipeout PUBLIC
+			libEGL.lib
+			libGLESv2.lib
+			WindowsApp.lib
+			OneCore.lib
+		)
+	elseif ("${RENDERER}" STREQUAL "GLES2")
 		if (TARGET OpenGL::GLES2)
 			target_link_libraries(wipeout PUBLIC OpenGL::GLES2)
 		endif()
-	endif()
-
-	if(USE_GLVND AND TARGET OpenGL::OpenGL)
-		target_link_libraries(wipeout PUBLIC OpenGL::OpenGL)
 	else()
-		target_link_libraries(wipeout PUBLIC OpenGL::GL)
-	endif()
+		target_include_directories(wipeout PUBLIC ${OPENGL_INCLUDE_DIR})
+		if(USE_GLVND AND TARGET OpenGL::OpenGL)
+			target_link_libraries(wipeout PUBLIC OpenGL::OpenGL)
+		else()
+			target_link_libraries(wipeout PUBLIC OpenGL::GL)
+		endif()
 
-	if(NOT APPLE)
-		target_include_directories(wipeout PRIVATE ${GLEW_INCLUDE_DIRS})
-		target_link_libraries(wipeout PRIVATE GLEW::GLEW)
+		if(NOT APPLE)
+			target_include_directories(wipeout PRIVATE ${GLEW_INCLUDE_DIRS})
+			target_link_libraries(wipeout PRIVATE GLEW::GLEW)
+		endif()
 	endif()
 elseif("${RENDERER}" STREQUAL "SOFTWARE")
 	target_compile_definitions(wipeout PRIVATE "RENDERER_SOFTWARE")
@@ -223,7 +268,11 @@ endif()
 
 if("${PLATFORM}" STREQUAL SDL2)
 	target_sources(wipeout PRIVATE src/platform_sdl.c)
-	target_link_libraries(wipeout PUBLIC SDL2::Main)
+	if(UWP_BUILD)
+		target_link_libraries(wipeout PUBLIC SDL2.lib)
+	else()
+		target_link_libraries(wipeout PUBLIC SDL2::Main)
+	endif()
 elseif("${PLATFORM}" STREQUAL SOKOL)
 	target_sources(wipeout PRIVATE src/platform_sokol.c)
 elseif("${PLATFORM}" STREQUAL NULL)

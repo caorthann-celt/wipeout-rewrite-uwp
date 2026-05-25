@@ -1,6 +1,16 @@
 
+// Use ANGLE's GLES2 headers for the UWP build.
+#if defined(UWP_BUILD) && defined(USE_GLES2)
+	#define GL_GLEXT_PROTOTYPES 1
+	#include <GLES2/gl2.h>
+	#include <GLES2/gl2ext.h>
+
+	#define glGenVertexArrays glGenVertexArraysOES
+	#define glBindVertexArray glBindVertexArrayOES
+	#define glDeleteVertexArrays glDeleteVertexArraysOES
+
 // macOS
-#if defined(__APPLE__) && defined(__MACH__)
+#elif defined(__APPLE__) && defined(__MACH__)
 	#include <OpenGL/gl.h>
 	#include <OpenGL/glext.h>
 	
@@ -392,7 +402,9 @@ static void render_flush(void);
 // }
 
 void render_init(vec2i_t screen_size) {	
-	#if defined(__APPLE__) && defined(__MACH__)
+	#if defined(UWP_BUILD) && defined(USE_GLES2)
+		// ANGLE already provides the GLES entry points on UWP.
+	#elif defined(__APPLE__) && defined(__MACH__)
 		// OSX
 		// (nothing to do here)
 	#else
@@ -1007,10 +1019,14 @@ void render_textures_reset(uint16_t len) {
 }
 
 void render_textures_dump(const char *path) {
+#if defined(UWP_BUILD) && defined(USE_GLES2)
+	(void)path;
+#else
 	int width = ATLAS_SIZE * ATLAS_GRID;
 	int height = ATLAS_SIZE * ATLAS_GRID;
 	rgba_t *pixels = malloc(sizeof(rgba_t) * width * height);
 	glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 	stbi_write_png(path, width, height, 4, pixels, 0);
 	free(pixels);
+#endif
 }
