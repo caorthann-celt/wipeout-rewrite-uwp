@@ -8,9 +8,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 project(wipeout-uwp LANGUAGES CXX)
 set_directory_properties(PROPERTIES VS_STARTUP_PROJECT ${PROJECT_NAME})
 
-set(WIPEOUT_UWP_SDL_ROOT "C:/Users/Caorthann/vcpkg/installed/x64-uwp" CACHE PATH "Root of the SDL2 UWP dependency install")
-set(WIPEOUT_UWP_ANGLE_ROOT "C:/Users/Caorthann/vcpkg/installed/x64-uwp" CACHE PATH "Root of the ANGLE UWP dependency install")
-set(WIPEOUT_UWP_D3DCOMPILER_DLL "C:/Program Files (x86)/Windows Kits/10/Redist/D3D/x64/d3dcompiler_47.dll" CACHE FILEPATH "UWP-packageable D3D compiler runtime required by ANGLE")
+set(WIPEOUT_UWP_VCPKG_ROOT "$ENV{VCPKG_ROOT}" CACHE PATH "Path to vcpkg")
+set(WIPEOUT_UWP_DEFAULT_DEPS_ROOT "")
+if(WIPEOUT_UWP_VCPKG_ROOT)
+    get_filename_component(WIPEOUT_UWP_DEFAULT_DEPS_ROOT "${WIPEOUT_UWP_VCPKG_ROOT}/installed/x64-uwp" ABSOLUTE)
+endif()
+set(WIPEOUT_UWP_SDL_ROOT "${WIPEOUT_UWP_DEFAULT_DEPS_ROOT}" CACHE PATH "Root of the SDL2 UWP dependency install")
+set(WIPEOUT_UWP_ANGLE_ROOT "${WIPEOUT_UWP_DEFAULT_DEPS_ROOT}" CACHE PATH "Root of the ANGLE UWP dependency headers and import libraries")
+set(WIPEOUT_UWP_ANGLE_RUNTIME_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/angle" CACHE PATH "Root of the packaged ANGLE UWP runtime")
+set(WIPEOUT_UWP_D3DCOMPILER_DLL "${WIPEOUT_UWP_ANGLE_RUNTIME_ROOT}/d3dcompiler_47.dll" CACHE FILEPATH "UWP-packageable D3D compiler runtime required by ANGLE")
 set(WIPEOUT_DATA_ROOT "" CACHE PATH "Directory containing the real wipEout game data folders such as textures, music and common")
 set(WIPEOUT_DLL_DIR "" CACHE PATH "Directory containing the UWP-built wipeout DLL and import library")
 set(WIPEOUT_DLL "" CACHE FILEPATH "Optional explicit path to the UWP-built wipeout DLL")
@@ -62,7 +68,6 @@ endif()
 
 set(WIPEOUT_UWP_SDL_BIN "${WIPEOUT_UWP_SDL_ROOT}/bin")
 set(WIPEOUT_UWP_SDL_LIB "${WIPEOUT_UWP_SDL_ROOT}/lib")
-set(WIPEOUT_UWP_ANGLE_BIN "${WIPEOUT_UWP_ANGLE_ROOT}/bin")
 set(WIPEOUT_UWP_STAGED_D3DCOMPILER "${CMAKE_CURRENT_BINARY_DIR}/D3DCOMPILER_47.dll")
 
 add_executable(${PROJECT_NAME} WIN32
@@ -84,9 +89,8 @@ add_custom_command(
 
 set(BinDeps
     "${WIPEOUT_UWP_SDL_BIN}/SDL2.dll"
-    "${WIPEOUT_UWP_SDL_BIN}/z.dll"
-    "${WIPEOUT_UWP_ANGLE_BIN}/libEGL.dll"
-    "${WIPEOUT_UWP_ANGLE_BIN}/libGLESv2.dll"
+    "${WIPEOUT_UWP_ANGLE_RUNTIME_ROOT}/libEGL.dll"
+    "${WIPEOUT_UWP_ANGLE_RUNTIME_ROOT}/libGLESv2.dll"
     "${WIPEOUT_UWP_STAGED_D3DCOMPILER}"
     "${WIPEOUT_RESOLVED_DLL}"
     ${WIPEOUT_UWP_RUNTIME_DLLS}

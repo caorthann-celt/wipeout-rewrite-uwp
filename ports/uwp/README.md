@@ -5,7 +5,7 @@ This is the Xbox Dev Mode wrapper for wipEout.
 The game builds as `wipeout.dll` with `clang-cl`. The UWP project is just the
 small launcher, DLL staging, manifest bits and MSIX.
 
-## 1. Setup
+## 1. Tools
 
 Install Visual Studio 2022 with the UWP and Windows app tools.
 
@@ -31,6 +31,8 @@ LLVM usually puts `clang-cl` here:
 C:\Program Files\LLVM\bin
 ```
 
+## 2. Dependencies
+
 Install the UWP bits into vcpkg:
 
 ```powershell
@@ -39,28 +41,59 @@ vcpkg install `
   angle:x64-uwp
 ```
 
-Point CMake at your vcpkg `x64-uwp` folder:
+Set `VCPKG_ROOT` before configuring either build:
+
+```powershell
+$env:VCPKG_ROOT="<vcpkg-root>"
+```
+
+The build uses vcpkg for:
+
+```text
+SDL2 headers, import libs and SDL2.dll
+ANGLE headers and import libs
+```
+
+The MSIX does not package ANGLE's vcpkg runtime DLLs. It packages the patched
+Xbox UWP ANGLE runtime that is already in this repo:
+
+```text
+ports/uwp/third_party/angle
+```
+
+That folder contains:
+
+```text
+libEGL.dll
+libGLESv2.dll
+d3dcompiler_47.dll
+LICENSE
+AUTHORS
+```
+
+The patched ANGLE runtime creates an Xbox sized EGL surface. The game asks EGL
+for the real surface size through:
+
+```text
+ports/uwp/helpers/uwp_egl_surface_size.c
+```
+
+If you need to override the dependency roots manually, pass:
 
 ```text
 -DWIPEOUT_UWP_SDL_ROOT="<vcpkg-root>/installed/x64-uwp"
 -DWIPEOUT_UWP_ANGLE_ROOT="<vcpkg-root>/installed/x64-uwp"
 ```
 
-If this is just for your own machine, you can also change the fallback paths in:
+## 3. Build Environment
 
-```text
-CMakeLists.txt
-ports/uwp/CMakeLists.txt
-```
-
-Use the same vcpkg tree for SDL2 and ANGLE. Keeps the whole thing tidy.
-
-## 2. Build the Game DLL
-
-Open a Visual Studio developer command prompt for UWP first. `clang-cl` still
-needs the MSVC and Windows SDK environment, and the UWP app platform matters.
+Use a Visual Studio developer command prompt for UWP before running the build
+commands. `clang-cl` still needs the MSVC and Windows SDK environment, and the
+UWP app platform matters.
 
 ```powershell
+$env:VCPKG_ROOT="<vcpkg-root>"
+
 & "${env:ProgramFiles}\Microsoft Visual Studio\2022\Professional\Common7\Tools\VsDevCmd.bat" `
   -arch=x64 `
   -host_arch=x64 `
@@ -69,6 +102,8 @@ needs the MSVC and Windows SDK environment, and the UWP app platform matters.
 
 If you skip the `-app_platform=UWP` bit, the DLL can link against the desktop
 VC runtime and Xbox will not like that.
+
+## 4. Build the Game DLL
 
 ```powershell
 cmake -S . -B build/uwp-wipeout-clang -G Ninja `
@@ -79,9 +114,7 @@ cmake -S . -B build/uwp-wipeout-clang -G Ninja `
   "-DCMAKE_BUILD_TYPE=Release" `
   "-DUWP_BUILD=ON" `
   "-DPLATFORM=SDL2" `
-  "-DRENDERER=GLES2" `
-  "-DWIPEOUT_UWP_SDL_ROOT=<vcpkg-root>/installed/x64-uwp" `
-  "-DWIPEOUT_UWP_ANGLE_ROOT=<vcpkg-root>/installed/x64-uwp"
+  "-DRENDERER=GLES2"
 
 cmake --build build/uwp-wipeout-clang --target wipeout
 ```
@@ -93,15 +126,25 @@ build/uwp-wipeout-clang/wipeout.dll
 build/uwp-wipeout-clang/wipeout.lib
 ```
 
-## 3. Build the Package
+Quick runtime check:
+
+```powershell
+dumpbin /dependents build/uwp-wipeout-clang/wipeout.dll
+```
+
+You want to see:
+
+```text
+VCRUNTIME140_APP.dll
+```
+
+## 5. Build the Package
 
 ```powershell
 cmake -S ports/uwp -B build/uwp-package -G "Visual Studio 17 2022" `
   "-DCMAKE_SYSTEM_NAME=WindowsStore" `
   "-DCMAKE_SYSTEM_VERSION=10.0.19041.0" `
-  "-DWIPEOUT_DLL_DIR=build/uwp-wipeout-clang" `
-  "-DWIPEOUT_UWP_SDL_ROOT=<vcpkg-root>/installed/x64-uwp" `
-  "-DWIPEOUT_UWP_ANGLE_ROOT=<vcpkg-root>/installed/x64-uwp"
+  "-DWIPEOUT_DLL_DIR=build/uwp-wipeout-clang"
 
 cmake --build build/uwp-package --config Release --target wipeout-uwp
 ```
@@ -129,7 +172,7 @@ Platform: x64
 Startup project: wipeout-uwp
 ```
 
-## 4. Game Data
+## 6. Game Data
 
 Shared packages should not include the game data.
 

@@ -1,6 +1,7 @@
 #include "SDL.h"
 #if defined(UWP_BUILD)
 #include "SDL_system.h"
+#include "uwp_egl_surface_size.h"
 #endif
 
 #include "platform.h"
@@ -309,6 +310,11 @@ uint32_t platform_store_userdata(const char *name, void *bytes, int32_t len) {
 
 	vec2i_t platform_screen_size(void) {
 		int width, height;
+#if defined(UWP_BUILD)
+		if (uwp_egl_surface_size(&width, &height)) {
+			return vec2i(width, height);
+		}
+#endif
 		SDL_GL_GetDrawableSize(window, &width, &height);
 		return vec2i(width, height);
 	}

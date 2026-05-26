@@ -45,8 +45,13 @@ cmake_dependent_option(MINIMAL_BUNDLE "Do not include music/movies for web build
 option(PATH_ASSETS "Path to where the game assets should be located.")
 option(PATH_USERDATA "Path to where user data (e.g. game saves) should be located.")
 option(DEV_BUILD "Set asset/userdata paths to the source directory for testing" OFF)
-set(WIPEOUT_UWP_SDL_ROOT "C:/Users/Caorthann/vcpkg/installed/x64-uwp" CACHE PATH "Root of the SDL2 UWP dependency install")
-set(WIPEOUT_UWP_ANGLE_ROOT "C:/Users/Caorthann/vcpkg/installed/x64-uwp" CACHE PATH "Root of the ANGLE UWP dependency install")
+set(WIPEOUT_UWP_VCPKG_ROOT "$ENV{VCPKG_ROOT}" CACHE PATH "Path to vcpkg")
+set(WIPEOUT_UWP_DEFAULT_DEPS_ROOT "")
+if(WIPEOUT_UWP_VCPKG_ROOT)
+	get_filename_component(WIPEOUT_UWP_DEFAULT_DEPS_ROOT "${WIPEOUT_UWP_VCPKG_ROOT}/installed/x64-uwp" ABSOLUTE)
+endif()
+set(WIPEOUT_UWP_SDL_ROOT "${WIPEOUT_UWP_DEFAULT_DEPS_ROOT}" CACHE PATH "Root of the SDL2 UWP dependency install")
+set(WIPEOUT_UWP_ANGLE_ROOT "${WIPEOUT_UWP_DEFAULT_DEPS_ROOT}" CACHE PATH "Root of the ANGLE UWP dependency headers and import libraries")
 if (DEV_BUILD)
 	set(PATH_ASSETS "${CMAKE_SOURCE_DIR}/")
 	set(PATH_USERDATA "${CMAKE_SOURCE_DIR}/")
@@ -150,10 +155,15 @@ if(UWP_BUILD)
 		"${WIPEOUT_UWP_SDL_ROOT}/include"
 		"${WIPEOUT_UWP_SDL_ROOT}/include/SDL2"
 		"${WIPEOUT_UWP_ANGLE_ROOT}/include"
+		"${CMAKE_CURRENT_SOURCE_DIR}/ports/uwp/helpers"
 	)
 	target_link_directories(wipeout PRIVATE
 		"${WIPEOUT_UWP_SDL_ROOT}/lib"
 		"${WIPEOUT_UWP_ANGLE_ROOT}/lib"
+	)
+	target_sources(wipeout PRIVATE
+		ports/uwp/helpers/uwp_egl_surface_size.c
+		ports/uwp/helpers/uwp_egl_surface_size.h
 	)
 elseif(WIN32)
 	target_compile_definitions(wipeout PRIVATE
